@@ -40,12 +40,30 @@
     If every row is green but the button stays disabled, the app is probably
     <strong>already installed</strong>. Check <code>chrome://apps</code>, remove “Chic”, then reload.
   </p>
+
+  <div id="android" hidden>
+    <h1 style="font-size:1.05rem; margin:26px 0 4px">Installed, but the icon has a Chrome badge?</h1>
+    <p class="sub">Then Android made a <strong>shortcut</strong>, not a real app. Every check above can pass
+    and this still happens — the last step is out of the page’s hands.</p>
+    <p class="sub">Chrome does not build the app itself: it asks <strong>Google Play Services</strong> to mint a
+    “WebAPK” and install it. When that fails or is unavailable, Chrome silently falls back to a plain
+    home-screen shortcut, which keeps the Chrome badge and opens in a tab with the address bar showing.
+    A real WebAPK has no badge and opens with no address bar.</p>
+    <p class="sub">To find out which you got, open <code>chrome://webapks</code> — a real install is listed
+    there. If the list is empty, check that Google Play Services is enabled and updated, and that Android
+    Settings → Apps → Special access → <strong>Install unknown apps</strong> allows Chrome. Delete the
+    badged icon before retrying, and stay on a good connection: minting needs a server round-trip and
+    falls back to a shortcut if it times out.</p>
+  </div>
 </main>
 
 <script>
 "use strict";
 const out = document.getElementById("out");
 const rows = {};
+
+// The WebAPK-vs-shortcut distinction only exists on Android.
+if(/Android/.test(navigator.userAgent)) document.getElementById("android").hidden = false;
 
 function row(key, name, state, detail){
   let el = rows[key];
