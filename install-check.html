@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chic — Install Diagnostics</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  :root{ color-scheme: dark; --bg:#1A1521; --surf:#241E2F; --line:rgba(255,255,255,.1);
+         --text:#EDE9F2; --mut:#9B93A8; --ok:#5FBF7F; --bad:#E07070; --warn:#E6C34A; }
+  *{box-sizing:border-box}
+  body{margin:0; padding:24px 16px 48px; background:var(--bg); color:var(--text);
+       font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+  main{max-width:640px; margin:0 auto}
+  h1{font-size:1.3rem; margin:0 0 4px}
+  p.sub{color:var(--mut); margin:0 0 20px}
+  .row{display:flex; gap:10px; align-items:flex-start; background:var(--surf);
+       border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:8px}
+  .dot{flex:0 0 auto; width:10px; height:10px; border-radius:50%; margin-top:6px; background:var(--mut)}
+  .ok .dot{background:var(--ok)} .bad .dot{background:var(--bad)} .warn .dot{background:var(--warn)}
+  .name{font-weight:600}
+  .detail{color:var(--mut); font-size:.87rem; word-break:break-word; white-space:pre-wrap}
+  button{margin-top:16px; width:100%; padding:12px; border-radius:12px; border:1px solid var(--line);
+         background:#C9B8FF; color:#141019; font:inherit; font-weight:600; cursor:pointer}
+  button[disabled]{background:var(--surf); color:var(--mut); cursor:not-allowed}
+  a{color:#C9B8FF}
+  code{background:rgba(0,0,0,.35); padding:1px 5px; border-radius:5px; font-size:.85em}
+</style>
+</head>
+<body>
+<main>
+  <h1>Chic — install diagnostics</h1>
+  <p class="sub">Open this page in Chrome at the same URL you use for the app. Every row must be green
+  before Chrome replaces “Create shortcut” with “Install”.</p>
+
+  <div id="out"></div>
+
+  <button id="installBtn" disabled>Waiting for Chrome’s install offer…</button>
+  <p class="sub" style="margin-top:14px">
+    If every row is green but the button stays disabled, the app is probably
+    <strong>already installed</strong>. Check <code>chrome://apps</code>, remove “Chic”, then reload.
+  </p>
+</main>
+
+<script>
+"use strict";
+const out = document.getElementById("out");
+const rows = {};
+
+function row(key, name, state, detail){
+  let el = rows[key];
+  if(!el){
+    el = rows[key] = document.createElement("div");
+    el.innerHTML = '<div class="dot"></div><div><div class="name"></div><div class="detail"></div></div>';
+    out.appendChild(el);
+  }
+  el.className = "row " + state;
+  el.querySelector(".name").textContent = name;
+  el.querySelector(".detail").textContent = detail;
+}
+
+// Seed the rows up front so async checks fill in place instead of appending
+// out of order.
+[["https","Secure origin (HTTPS)"],
+ ["mode","Display mode"],
+ ["manifest","Manifest linked"],
+ ["mfetch","Manifest fetch"],
+ ["display","display is app-like"],
+ ["names","name / short_name"],
+ ["start","start_url inside scope"],
+ ["id","Manifest id"],
+ ["icons","Icons (need 192px + 512px, purpose any)"],
+ ["sw","Service worker registered"],
+ ["bip","Chrome install offer (beforeinstallprompt)"]
+].forEach(([k,n]) => row(k, n, "", "Checking…"));
+
+/* 1. Secure origin */
+const secure = window.isSecureContext;
+row("https", "Secure origin (HTTPS)", secure ? "ok" : "bad",
+  secure ? location.origin
+         : "Serving over " + location.protocol + ". Install requires https:// or localhost. "
+           + "A file:// path or a raw.githubusercontent.com / htmlpreview URL can never be installed — "
+           + "use the GitHub Pages URL.");
+
+/* 2. Already running as an installed app? */
+const standalone = matchMedia("(display-mode: standalone)").matches
+                || matchMedia("(display-mode: fullscreen)").matches
+                || matchMedia("(display-mode: minimal-ui)").matches
+                || navigator.standalone === true;
+row("mode", "Display mode", standalone ? "warn" : "ok",
+  standalone ? "Already running as an installed app — Chrome will not offer to install it again."
+             : "Running in a browser tab.");
+
+/* 3. Manifest */
+const manifestLink = document.querySelector('link[rel="manifest"]');
+if(!manifestLink){
+  row("manifest", "Manifest linked", "bad", "No <link rel=\"manifest\"> in the page.");
+}else{
+  row("manifest", "Manifest linked", "ok", manifestLink.href);
+  fetch(manifestLink.href, {cache:"no-store"}).then(async r => {
+    const ct = r.headers.get("content-type") || "(none)";
+    if(!r.ok){
+      row("mfetch", "Manifest fetch", "bad", "HTTP " + r.status + " for " + manifestLink.href
+        + " — the file is not being served at that path.");
+      return;
+    }
+    let m;
+    try { m = JSON.parse(await r.text()); }
+    catch(err){
+      row("mfetch", "Manifest fetch", "bad", "Served (HTTP 200, " + ct + ") but the JSON is invalid: " + err.message);
+      return;
+    }
+    row("mfetch", "Manifest fetch", "ok", "HTTP 200 · " + ct);
+
+    const okDisplay = ["standalone","fullscreen","minimal-ui"].includes(m.display)
+      || (m.display_override || []).some(d => ["standalone","fullscreen","minimal-ui"].includes(d));
+    row("display", "display is app-like", okDisplay ? "ok" : "bad",
+      "display: " + m.display + (m.display_override ? " · display_override: " + m.display_override.join(", ") : ""));
+
+    row("names", "name / short_name", (m.name || m.short_name) ? "ok" : "bad",
+      (m.name || "(no name)") + " · " + (m.short_name || "(no short_name)"));
+
+    const startUrl = new URL(m.start_url || "./", manifestLink.href);
+    const scope = new URL(m.scope || "./", manifestLink.href);
+    const inScope = startUrl.href.startsWith(scope.href);
+    row("start", "start_url inside scope", inScope ? "ok" : "bad",
+      "start_url: " + startUrl.href + "\nscope: " + scope.href);
+
+    row("id", "Manifest id", m.id ? "ok" : "warn",
+      m.id ? ("id: " + m.id + " → " + new URL(m.id, location.origin).href
+              + "\n(On *.github.io every repo shares one origin, so an id of \"/\" or \"./\" collides with your other Pages apps.)")
+           : "No id — Chrome falls back to start_url.");
+
+    /* 4. Icons actually load at the declared size */
+    const icons = m.icons || [];
+    if(!icons.length){ row("icons", "Icons", "bad", "No icons in the manifest."); return; }
+    const results = await Promise.all(icons.map(ic => new Promise(res => {
+      const url = new URL(ic.src, manifestLink.href).href;
+      const img = new Image();
+      img.onload  = () => res({ok:true,  txt:ic.sizes + " " + (ic.purpose||"any") + " → " + img.naturalWidth + "×" + img.naturalHeight});
+      img.onerror = () => res({ok:false, txt:ic.sizes + " " + (ic.purpose||"any") + " → FAILED to load " + url});
+      img.src = url;
+    })));
+    const anyPurpose = icons.filter(i => !i.purpose || i.purpose.split(" ").includes("any"));
+    const has192 = anyPurpose.some(i => (i.sizes||"").split(" ").some(s => parseInt(s) >= 192));
+    const has512 = anyPurpose.some(i => (i.sizes||"").split(" ").some(s => parseInt(s) >= 512));
+    const allLoaded = results.every(r => r.ok);
+    row("icons", "Icons (need 192px + 512px, purpose any)",
+      (allLoaded && has192 && has512) ? "ok" : "bad",
+      results.map(r => r.txt).join("\n")
+        + "\n192px any: " + (has192 ? "yes" : "NO") + " · 512px any: " + (has512 ? "yes" : "NO"));
+  }).catch(err => row("mfetch", "Manifest fetch", "bad", String(err)));
+}
+
+/* 5. Service worker */
+if(!("serviceWorker" in navigator)){
+  row("sw", "Service worker", "bad", "This browser has no service worker support.");
+}else if(!secure){
+  row("sw", "Service worker", "bad", "Cannot register on a non-secure origin.");
+}else{
+  navigator.serviceWorker.register("sw.js", {scope:"./"}).then(reg => {
+    const update = () => {
+      const w = reg.active || reg.waiting || reg.installing;
+      row("sw", "Service worker registered", reg.active ? "ok" : "warn",
+        "scope: " + reg.scope + "\nstate: " + (w ? w.state : "unknown")
+        + (reg.active ? "" : "\nStill activating — reload in a moment."));
+    };
+    update();
+    reg.addEventListener("updatefound", () => {
+      const w = reg.installing;
+      if(w) w.addEventListener("statechange", update);
+    });
+  }).catch(err => row("sw", "Service worker registered", "bad",
+    err.name + ": " + err.message
+    + "\nA 404 here means sw.js is not being served next to this page."));
+}
+
+/* 6. The install offer itself */
+row("bip", "Chrome install offer (beforeinstallprompt)", "warn",
+  "Not fired yet. Chrome fires this within a few seconds once every check above passes.");
+
+const btn = document.getElementById("installBtn");
+let deferred = null;
+
+addEventListener("beforeinstallprompt", e => {
+  e.preventDefault();
+  deferred = e;
+  row("bip", "Chrome install offer (beforeinstallprompt)", "ok",
+    "Fired — Chrome considers this page installable.");
+  btn.disabled = false;
+  btn.textContent = "Install Chic";
+});
+
+addEventListener("appinstalled", () => {
+  btn.disabled = true;
+  btn.textContent = "Installed ✓";
+});
+
+btn.onclick = async () => {
+  if(!deferred) return;
+  deferred.prompt();
+  const {outcome} = await deferred.userChoice;
+  deferred = null;
+  btn.disabled = true;
+  btn.textContent = outcome === "accepted" ? "Installing…" : "Install dismissed";
+};
+
+setTimeout(() => {
+  if(!deferred && !standalone){
+    const el = rows["bip"];
+    if(el && el.classList.contains("warn")){
+      row("bip", "Chrome install offer (beforeinstallprompt)", "bad",
+        "Still not fired after 8s.\n"
+        + "• If every check above is green, Chic is most likely already installed — see chrome://apps.\n"
+        + "• Firefox and Safari never fire this event; use Chrome, Edge, or another Chromium browser.\n"
+        + "• Open chrome://flags and confirm nothing is overriding install criteria, then hard-reload (Ctrl+Shift+R).");
+    }
+  }
+}, 8000);
+</script>
+</body>
+</html>

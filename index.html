@@ -3,14 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#141019">
+<meta name="theme-color" content="#1A1521">
+<meta name="description" content="Your closet, curated — pieces, looks, planning and wear insights.">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Chic">
 <title>Chic — Your Wardrobe</title>
 <link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<meta name="theme-color" content="#1A1521">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Italiana&family=Jost:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -384,6 +386,7 @@ nav button:focus-visible{outline:2px solid var(--acc)}
   <button class="iconbtn" id="profBtn" aria-label="Switch closet">👤</button>
   <button class="iconbtn" id="themeBtn" aria-label="Toggle dark or light">◐</button>
   <button class="iconbtn" id="fsBtn" aria-label="Fullscreen"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg></button>
+  <button class="iconbtn hidden" id="installBtn" aria-label="Install Chic as an app"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M2.5 12.5v1h11v-1"/></svg></button>
 </div>
 
 <main id="view"></main>
@@ -414,11 +417,55 @@ const ICON="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAMAAAD04JH5AA
 (function installIcons(){
   const head=document.head;
   const link=(rel,href,extra)=>{ const l=document.createElement("link"); l.rel=rel; l.href=href; if(extra)Object.assign(l,extra); head.appendChild(l); };
-  link("icon", ICON, {type:"image/png"});
   link("apple-touch-icon", ICON);
-  // manifest is a real file (manifest.json) so browsers allow app install
-  if("serviceWorker" in navigator && location.protocol==="https:")
-    navigator.serviceWorker.register("sw.js").catch(()=>{});
+})();
+
+/* ---- PWA install: service worker + real "Install app" button ----
+   Chrome only offers "Install" (rather than "Create shortcut") once the page is
+   served over HTTPS, links a valid manifest, and has an active service worker
+   with a fetch handler. When all of that holds, Chrome fires
+   `beforeinstallprompt`, which we capture so the app can offer its own button.  */
+(function installApp(){
+  const secure = window.isSecureContext;
+
+  if("serviceWorker" in navigator && secure){
+    addEventListener("load", ()=>{
+      navigator.serviceWorker.register("sw.js", {scope:"./"})
+        .catch(err => console.error("[Chic] service worker registration failed:", err));
+    });
+  }else if("serviceWorker" in navigator){
+    console.warn("[Chic] not a secure origin ("+location.protocol+") — install is unavailable. Serve over HTTPS, e.g. GitHub Pages.");
+  }
+
+  const btn = document.getElementById("installBtn");
+  const standalone = matchMedia("(display-mode: standalone)").matches
+                  || matchMedia("(display-mode: fullscreen)").matches
+                  || navigator.standalone === true;
+  let deferred = null;
+
+  addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();               // keep Chrome's mini-infobar out of the way
+    deferred = e;
+    if(btn && !standalone) btn.classList.remove("hidden");
+  });
+
+  addEventListener("appinstalled", ()=>{
+    deferred = null;
+    if(btn) btn.classList.add("hidden");
+    if(typeof toast === "function") toast("Chic installed — open it from your apps");
+  });
+
+  if(btn) btn.onclick = async ()=>{
+    if(!deferred){
+      toast("Chrome hasn't offered an install yet — open install-check.html to see why");
+      return;
+    }
+    deferred.prompt();
+    const {outcome} = await deferred.userChoice;
+    deferred = null;
+    btn.classList.add("hidden");
+    if(outcome !== "accepted") toast("Install dismissed");
+  };
 })();
 /* ============ constants ============ */
 const CATS = [
