@@ -50,10 +50,16 @@
     home-screen shortcut, which keeps the Chrome badge and opens in a tab with the address bar showing.
     A real WebAPK has no badge and opens with no address bar.</p>
     <p class="sub">To find out which you got, open <code>chrome://webapks</code> — a real install is listed
-    there. If the list is empty, check that Google Play Services is enabled and updated, and that Android
-    Settings → Apps → Special access → <strong>Install unknown apps</strong> allows Chrome. Delete the
-    badged icon before retrying, and stay on a good connection: minting needs a server round-trip and
-    falls back to a shortcut if it times out.</p>
+    there. If the list is empty, work through these in order:</p>
+    <ol class="sub" style="padding-left:20px">
+      <li><strong>Google Play Store must be enabled.</strong> The minted APK is installed
+      <em>through the Play Store</em>, so a disabled Play Store breaks the install even though Play
+      Services itself looks healthy. Settings → Apps → Google Play Store → Enable.</li>
+      <li><strong>Google Play Services</strong> enabled and updated.</li>
+      <li>Android Settings → Apps → Special access → <strong>Install unknown apps</strong> allows Chrome.</li>
+      <li>Delete the badged icon before retrying, and stay on a good connection — minting needs a
+      server round-trip and falls back to a shortcut if it times out.</li>
+    </ol>
   </div>
 </main>
 
